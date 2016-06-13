@@ -1,6 +1,6 @@
-package com.epam.main;
+package com.epam.mr.examples;
 
-import com.epam.main.util.IntPair;
+import com.epam.mr.examples.util.IntPair;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;

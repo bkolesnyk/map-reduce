@@ -1,4 +1,4 @@
-package com.epam.main.util;
+package com.epam.mr.examples.util;
 
 import java.io.IOException;
 

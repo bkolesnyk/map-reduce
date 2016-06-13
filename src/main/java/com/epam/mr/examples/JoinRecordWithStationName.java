@@ -1,9 +1,9 @@
-package com.epam.main;
+package com.epam.mr.examples;
 
-import com.epam.main.util.JobBuilder;
-import com.epam.main.util.NcdcRecordParser;
-import com.epam.main.util.NcdcStationMetadataParser;
-import com.epam.main.util.TextPair;
+import com.epam.mr.examples.util.JobBuilder;
+import com.epam.mr.examples.util.NcdcRecordParser;
+import com.epam.mr.examples.util.NcdcStationMetadataParser;
+import com.epam.mr.examples.util.TextPair;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;

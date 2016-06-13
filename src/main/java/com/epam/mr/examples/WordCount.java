@@ -1,4 +1,4 @@
-package com.epam.main;
+package com.epam.mr.examples;
 
 import java.io.DataInput;
 import java.io.DataOutput;

@@ -1,4 +1,4 @@
-package com.epam.main.util;
+package com.epam.mr.examples.util;
 
 import org.apache.hadoop.io.*;
 

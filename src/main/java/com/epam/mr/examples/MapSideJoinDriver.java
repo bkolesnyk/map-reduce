@@ -1,4 +1,4 @@
-package com.epam.main;
+package com.epam.mr.examples;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;

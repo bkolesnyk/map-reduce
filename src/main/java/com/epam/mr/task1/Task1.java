@@ -1,22 +1,27 @@
 package com.epam.mr.task1;
 
-import com.epam.mr.examples.JoinRecordWithStationName;
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.*;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.WritableComparable;
+import org.apache.hadoop.io.WritableComparator;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
-import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
-import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
+import java.io.*;
+import java.net.URI;
+import java.util.HashMap;
 import java.util.Iterator;
 
 /**
@@ -26,18 +31,15 @@ import java.util.Iterator;
 public class Task1 extends Configured implements Tool {
     public static class TextPair2 implements WritableComparable<TextPair2> {
         private Text date;
-        private Text tag;
         private LongWritable arrDelay;
 
         TextPair2() {
             this.date = new Text();
-            this.tag = new Text();
             this.arrDelay = new LongWritable();
         }
 
-        TextPair2(Text date, Text tag, LongWritable arrDelay) {
+        TextPair2(Text date, LongWritable arrDelay) {
             this.date = date;
-            this.tag = tag;
             this.arrDelay = arrDelay;
         }
 
@@ -47,19 +49,19 @@ public class Task1 extends Configured implements Tool {
             if (cmp != 0) {
                 return cmp;
             }
-            return tag.compareTo(o.getTag());
+            return arrDelay.compareTo(o.getArrDelay());
         }
 
         @Override
         public void write(DataOutput dataOutput) throws IOException {
             date.write(dataOutput);
-            tag.write(dataOutput);
+            arrDelay.write(dataOutput);
         }
 
         @Override
         public void readFields(DataInput dataInput) throws IOException {
             date.readFields(dataInput);
-            tag.readFields(dataInput);
+            arrDelay.readFields(dataInput);
         }
 
         public Text getDate() {
@@ -70,13 +72,6 @@ public class Task1 extends Configured implements Tool {
             this.date = date;
         }
 
-        public Text getTag() {
-            return tag;
-        }
-
-        public void setTag(Text tag) {
-            this.tag = tag;
-        }
 
         public LongWritable getArrDelay() {
             return arrDelay;
@@ -88,55 +83,96 @@ public class Task1 extends Configured implements Tool {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
+            if (this == o) return true;
+
+            if (o == null || getClass() != o.getClass()) return false;
 
             TextPair2 textPair2 = (TextPair2) o;
 
-            if (date != null ? !date.equals(textPair2.date) : textPair2.date != null) {
-                return false;
-            }
-            if (tag != null ? !tag.equals(textPair2.tag) : textPair2.tag != null) {
-                return false;
-            }
-            return arrDelay != null ? arrDelay.equals(textPair2.arrDelay) : textPair2.arrDelay == null;
-
+            return new EqualsBuilder()
+                    .append(date, textPair2.date)
+                    .append(arrDelay, textPair2.arrDelay)
+                    .isEquals();
         }
 
         @Override
         public int hashCode() {
-            int result = date != null ? date.hashCode() : 0;
-            result = 31 * result + (tag != null ? tag.hashCode() : 0);
-            result = 31 * result + (arrDelay != null ? arrDelay.hashCode() : 0);
-            return result;
+            return new HashCodeBuilder(17, 37)
+                    .append(date)
+                    .append(arrDelay)
+                    .toHashCode();
         }
 
         @Override
         public String toString() {
-            return "TextPair2{" +
-                    "date=" + date +
-                    ", tag=" + tag +
-                    ", arrDelay=" + arrDelay +
-                    '}';
+            return date + "," + arrDelay;
         }
+
     }
 
     public static class FlightMapper extends Mapper<LongWritable, Text, TextPair2, Text> {
         private Text date = new Text();
         private LongWritable arrDelay = new LongWritable();
         private Text info = new Text();
+        private TextPair2 textPair2 = new TextPair2();
+        private static HashMap<String, String> weatherMap = new HashMap<String, String>();
+        private BufferedReader brReader;
+
+        enum MYCOUNTER {
+            RECORD_COUNT, FILE_EXISTS, FILE_NOT_FOUND, SOME_OTHER_ERROR, MAP_SIZE
+        }
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+
+            Path[] cacheFilesLocal = DistributedCache.getLocalCacheFiles(context.getConfiguration());
+
+            for (Path eachPath : cacheFilesLocal) {
+                if (eachPath.getName().trim().equals("sfo_weather.csv")) {
+                    context.getCounter(FlightMapper.MYCOUNTER.FILE_EXISTS).increment(1);
+                    loadWeatherMap(eachPath, context);
+                }
+            }
+
+        }
+
+        private void loadWeatherMap(Path path, Context context) throws IOException {
+            String strLineRead = "";
+            try {
+                brReader = new BufferedReader(new FileReader(path.toString()));
+
+                // Read each line, split and load to HashMap
+                while ((strLineRead = brReader.readLine()) != null) {
+                    String weatherFieldArray[] = strLineRead.split(",");
+                    String date = weatherFieldArray[1] + "," + transformDate(weatherFieldArray[2]) + "," + transformDate(weatherFieldArray[3]);
+                    String info = weatherFieldArray[4] + "," + weatherFieldArray[5] + "," + weatherFieldArray[6];
+                    weatherMap.put(date, info);
+                }
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+                context.getCounter(FlightMapper.MYCOUNTER.FILE_NOT_FOUND).increment(1);
+            } catch (IOException e) {
+                context.getCounter(FlightMapper.MYCOUNTER.SOME_OTHER_ERROR).increment(1);
+                e.printStackTrace();
+            } finally {
+                if (brReader != null) {
+                    brReader.close();
+                }
+            }
+            context.getCounter(MYCOUNTER.MAP_SIZE).increment(weatherMap.size());
+        }
 
         @Override
         protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            context.getCounter(FlightMapper.MYCOUNTER.RECORD_COUNT).increment(1);
             String[] input = value.toString().split(",");
-
             if (input[17].equals("SFO") && !input[14].equals("NA")) {
-                date.set(input[0] + "," + input[1] + "," + input[2]);
+                String d = input[0] + "," + transformDate(input[1]) + "," + transformDate(input[2]);
+                String weather = weatherMap.get(d);
+                date.set(d);
                 arrDelay.set(Integer.parseInt(input[14]));
+                textPair2.setDate(date);
+                textPair2.setArrDelay(arrDelay);
                 info.set(new StringBuilder()
                         .append(input[4]).append(",")
                         .append(input[6]).append(",")
@@ -146,39 +182,30 @@ public class Task1 extends Configured implements Tool {
                         .append(input[14]).append(",")
                         .append(input[15]).append(",")
                         .append(input[16]).append(",")
-                        .append(input[17]).toString()
+                        .append(input[17]).append(",")
+                        .append(weather).toString()
                 );
-                context.write(new TextPair2(date, new Text("0"), arrDelay), info);
+                context.write(textPair2, info);
             }
         }
-    }
 
-    public static class WeatherMapper extends Mapper<LongWritable, Text, TextPair2, Text> {
-        private Text date = new Text();
-        private LongWritable arrDelay = new LongWritable(0);
-        private Text info = new Text();
-
-        @Override
-        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-            String[] input = value.toString().split(",");
-            date.set(input[1] + "," + input[2] + "," + input[3]);
-            info.set(new StringBuilder()
-                    .append(input[4]).append(",")
-                    .append(input[5]).append(",")
-                    .append(input[6]).toString());
-            context.write(new TextPair2(date, new Text("1"), arrDelay), info);
+        private String transformDate(String date) {
+            String result = date;
+            if (date.length() == 1) {
+                result = "0" + date;
+            }
+            return result;
         }
     }
+
 
     public static class Task1Reducer extends Reducer<TextPair2, Text, Text, Text> {
         @Override
         protected void reduce(TextPair2 key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
             Iterator<Text> iter = values.iterator();
-            Text flight = new Text(iter.next());
             while (iter.hasNext()) {
-                Text weather = iter.next();
-                Text outValue = new Text(flight.toString() + "," + weather.toString());
-                context.write(key.getDate(), outValue);
+                Text info = iter.next();
+                context.write(new Text(key.getDate().toString()), info);
             }
         }
     }
@@ -212,29 +239,31 @@ public class Task1 extends Configured implements Tool {
             if (cmp != 0) {
                 return cmp;
             }
-            int cmp2 = ((TextPair2) w1).getArrDelay().compareTo(((TextPair2) w2).getArrDelay());
-            if (cmp2 != 0) {
-                return cmp2;
-            }
-            return ((TextPair2) w1).getTag().compareTo(((TextPair2) w2).getTag()); //reverse
+            return -1 * ((TextPair2) w1).getArrDelay().compareTo(((TextPair2) w2).getArrDelay());
         }
     }
 
     public int run(String[] args) throws Exception {
-//        Job job = JobBuilder.parseInputAndOutput(this, getConf(), args);
         if (args.length != 3) {
             System.out.println("Usage <flights input> <weather input> <output>");
             return -1;
         }
         Job job = new Job(getConf(), "Join flights records with weather");
         job.setJarByClass(getClass());
+
+        Configuration conf = job.getConfiguration();
+        conf.set("mapreduce.output.textoutputformat.separator", ",");
+
+
         Path flightsInputPath = new Path(args[0]);
-        Path weatherInputPath = new Path(args[1]);
+        String weatherInputPath = args[1];
         Path outputPath = new Path(args[2]);
 
-        MultipleInputs.addInputPath(job, flightsInputPath, TextInputFormat.class, FlightMapper.class);
-        MultipleInputs.addInputPath(job, weatherInputPath, TextInputFormat.class, WeatherMapper.class);
+        DistributedCache.addCacheFile(new URI(weatherInputPath), conf);
 
+        job.setMapperClass(FlightMapper.class);
+
+        FileInputFormat.setInputPaths(job, flightsInputPath);
         FileOutputFormat.setOutputPath(job, outputPath);
 
         job.setPartitionerClass(KeyPartitioner.class);
